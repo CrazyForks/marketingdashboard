@@ -22,7 +22,13 @@ export function BoardFlowPanel({
   /** 受控选中板块: 外部(资金流向面板)清除筛选时同步清图表高亮 */
   selectedSector?: { code: string; name: string } | null;
 } & PanelZoomProps) {
-  const { data: flows, error, updated } = usePolling(() => api.boardFlow(20), POLL_MS);
+  const { data: flowEnv, error, updated } = usePolling(() => api.boardFlow(20), POLL_MS);
+  const flows = flowEnv?.data;
+  // 上游(东财 push2*)不可达时服务端降级返回上次成功数据: 明确标注"旧数据"+ 快照时间, 不冒充实时
+  const stale = !!flowEnv?.stale;
+  const staleAt = flowEnv?.asof ? new Date(flowEnv.asof).toLocaleTimeString("zh-CN", { hour12: false }) : "";
+  // 替代源(新浪/腾讯)无板块分时曲线 → 只有板块净额, 图表无曲线可画时给出说明而不是空白
+  const noCurve = !!flows?.length && !flows.some((f) => f.points.length > 2);
   const [progress, setProgress] = useState(1);
   const [playing, setPlaying] = useState(false);
   // TV 弱 GPU: 倒计时每秒重渲染整个面板(含大SVG), 禁用
@@ -69,6 +75,14 @@ export function BoardFlowPanel({
       accent="#f43f5e"
       right={
         <div className="flex items-center gap-2">
+          {stale && (
+            <span
+              title={`上游数据源不可达, 服务端返回上次成功数据${staleAt ? `(快照 ${staleAt})` : ""}`}
+              className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300"
+            >
+              旧数据{staleAt ? ` ${staleAt}` : ""}
+            </span>
+          )}
           {!isTv && (
             <span className="font-mono text-[10px] text-slate-500" style={{ fontVariantNumeric: "tabular-nums" }}>
               {countdown}s
@@ -101,7 +115,16 @@ export function BoardFlowPanel({
     >
       <div className="h-full min-h-0 p-1.5">
         {flows ? (
-          <BoardFlowChart flows={flows} progress={progress} labelMode={labelMode} selected={selectedSector?.code ?? null} onSelect={onSelectSector} />
+          <div className="flex h-full min-h-0 flex-col">
+            {noCurve && (
+              <div className="shrink-0 px-1 py-0.5 text-[10px] text-amber-300/80">
+                上游板块分时曲线不可用(替代源仅提供板块主力净额) — 选中板块仍可查看成分股资金流
+              </div>
+            )}
+            <div className="min-h-0 flex-1">
+              <BoardFlowChart flows={flows} progress={progress} labelMode={labelMode} selected={selectedSector?.code ?? null} onSelect={onSelectSector} />
+            </div>
+          </div>
         ) : (
           <div className="flex h-full items-center justify-center text-[11px] text-slate-600">
             {error ? <span className="text-rose-400/80">板块资金流连接失败,自动重试中…</span> : "板块资金流加载中…"}
