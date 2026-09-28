@@ -4,13 +4,16 @@ import { Panel, type PanelZoomProps } from "./Panel";
 import { BoardFlowChart } from "./BoardFlowChart";
 import { usePolling } from "@/hooks/usePolling";
 import { api } from "@/lib/api";
+import { boardFlowScope, FLOW_RANK_NOTE } from "@/lib/board-taxonomy";
 import { isTv } from "@/lib/tv";
 
 const POLL_MS = 10000;
 const DURATION_MS = 12000;
 const STEP_MS = 100;
 
-/** 板块实时资金流向图(流入/流出 TOP10 行业, 分钟级累计主力净流入) */
+/** 板块实时资金流向图(流入/流出 TOP10 行业, 分钟级累计主力净流入)
+ *  板块"行业"口径随数据源变化(新浪行业/腾讯申万一级/东财多层级), 面板显式标注当前口径与排序口径,
+ *  不跨源混用同一套"行业"名号(见 @/lib/board-taxonomy)。 */
 export function BoardFlowPanel({
   className = "",
   onSelectSector,
@@ -29,6 +32,8 @@ export function BoardFlowPanel({
   const staleAt = flowEnv?.asof ? new Date(flowEnv.asof).toLocaleTimeString("zh-CN", { hour12: false }) : "";
   // 替代源(新浪/腾讯)无板块分时曲线 → 只有板块净额, 图表无曲线可画时给出说明而不是空白
   const noCurve = !!flows?.length && !flows.some((f) => f.points.length > 2);
+  // 口径/层级标注: 由服务端信封的 source 决定(新浪行业 / 腾讯申万一级 / 东财多层级混排)
+  const scope = boardFlowScope(flowEnv?.source ?? undefined);
   const [progress, setProgress] = useState(1);
   const [playing, setPlaying] = useState(false);
   // TV 弱 GPU: 倒计时每秒重渲染整个面板(含大SVG), 禁用
@@ -116,6 +121,15 @@ export function BoardFlowPanel({
       <div className="h-full min-h-0 p-1.5">
         {flows ? (
           <div className="flex h-full min-h-0 flex-col">
+            {/* 口径行: 写清"行业"是哪个口径/层级 + 排序口径, 避免跨源跨层级混读 */}
+            <div className="flex shrink-0 items-center gap-1 px-1 py-0.5 text-[10px] text-slate-500" title={scope.note}>
+              <span>口径</span>
+              <span className="text-slate-300">{scope.label}</span>
+              <span className="text-slate-700">·</span>
+              <span>{scope.singleLevel ? "单一口径(不分层)" : "多层级混排"}</span>
+              <span className="text-slate-700">·</span>
+              <span className="truncate">{FLOW_RANK_NOTE}</span>
+            </div>
             {noCurve && (
               <div className="shrink-0 px-1 py-0.5 text-[10px] text-amber-300/80">
                 上游板块分时曲线不可用(替代源仅提供板块主力净额) — 选中板块仍可查看成分股资金流
